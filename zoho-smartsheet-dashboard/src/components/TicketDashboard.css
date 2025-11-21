@@ -846,19 +846,23 @@ button.time-dropdown::after {
 }
 
 
+/* Webkit browsers: Chrome, Edge, Safari */
+::-webkit-scrollbar {
+  width: 1px; /* Change width here (default is ~16px) */
+  background: black; /* Track color (background of scrollbar) */
+}
 
-.no-scrollbar {
-  scrollbar-width: thin;       /* For Firefox: thin scrollbar */
-  scrollbar-color: #292828 black;   /* Firefox thumb and track */
+::-webkit-scrollbar-thumb {
+  background: black; /* Scrollbar thumb color */
+  border-radius: 5px;
 }
-.no-scrollbar::-webkit-scrollbar {
-  width: 1px;                  /* Chrome, Edge, Safari, Opera */
+
+/* For Firefox */
+* {
+  scrollbar-width: thin;            /* Makes the scrollbar thinner */
+  scrollbar-color: black #181b26; /* thumb color track color */
 }
-.no-scrollbar::-webkit-scrollbar-thumb {
-  background: #2c2c2c;
-  border-radius: 10px;
-}
-.no-scrollbar::-webkit-scrollbar-track {
-  background: #2c2c2c;
-  /* background: #f8f8f8; */
-}
+
+
+
+

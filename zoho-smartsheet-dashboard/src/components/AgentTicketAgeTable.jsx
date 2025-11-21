@@ -2,6 +2,59 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
 
+const statusColors = {
+  open: "#bd2331",
+  hold: "#ffc107",
+  inProgress: "#8fc63d",
+  escalated: "#ef6724",
+  unassigned: "#1e4489"
+};
+
+function formatDateWithMonthName(dateString) {
+  if (!dateString) return "";
+  let match = dateString.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4}),?\s*(\d{2}):(\d{2})/);
+  if (match) {
+    const [_, dd, mm, yyyy, HH, MM] = match;
+    const months = [
+      "January", "February", "March", "April", "May", "June", "July",
+      "August", "September", "October", "November", "December"
+    ];
+    const mIndex = parseInt(mm, 10) - 1;
+    return `${dd} ${months[mIndex]} ${yyyy}, ${HH}:${MM}`;
+  }
+  const dt = new Date(dateString);
+  if (!isNaN(dt)) {
+    const day = dt.getDate().toString().padStart(2, '0');
+    const month = dt.toLocaleString('default', { month: 'long' });
+    const year = dt.getFullYear();
+    const hour = dt.getHours().toString().padStart(2, '0');
+    const minute = dt.getMinutes().toString().padStart(2, '0');
+    return `${day} ${month} ${year}, ${hour}:${minute}`;
+  }
+  return dateString;
+}
+
+function normalizeStatus(text) {
+  if (!text) return "";
+  const t = text.replace(/[\s\-_]/g, "").toLowerCase();
+  if (t === "hold" || t === "onhold") return "hold";
+  if (t === "inprogress" || t === "in-progress" || t === "in_progress") return "inProgress";
+  if (t === "open") return "open";
+  if (t === "escalated") return "escalated";
+  return t;
+}
+
+const statusKeyMap = {
+  open: "open",
+  hold: "hold",
+  "on-hold": "hold",
+  onhold: "hold",
+  "in-progress": "inProgress",
+  inprogress: "inProgress",
+  "in_progress": "inProgress",
+  escalated: "escalated"
+};
+
 export default function AgentTicketAgeTable({
   membersData,
   onClose,
@@ -16,14 +69,15 @@ export default function AgentTicketAgeTable({
 }) {
   const [hoveredRowIndex, setHoveredRowIndex] = useState(null);
 
+  const showPendingTable = selectedAges.includes("pending");
+
   const ageColumns = [
-    { key: "fifteenDays", label: "1-15 Days Tickets", ageProp: "BetweenOneAndFifteenDays" },
-    { key: "sixteenToThirty", label: "16-30 Days Tickets", ageProp: "BetweenSixteenAndThirtyDays" },
-    { key: "month", label: "30+ Days Tickets", ageProp: "OlderThanThirtyDays" }
+    { key: "fifteenDays", label: "1-15 Tickets", ageProp: "BetweenOneAndFifteenDays" },
+    { key: "sixteenToThirty", label: "8-15 Tickets", ageProp: "BetweenSixteenAndThirtyDays" },
+    { key: "month", label: "15+ Tickets", ageProp: "OlderThanThirtyDays" }
   ];
 
   const visibleAgeColumns = ageColumns.filter(col => selectedAges.includes(col.key));
-
   const columnsToShow = [
     { key: "serial", label: "SI. NO." },
     { key: "name", label: "Agent Name" },
@@ -32,40 +86,104 @@ export default function AgentTicketAgeTable({
     ...visibleAgeColumns
   ];
 
-  const statusPalette = {
-    open: "#bd2331",
-    hold: "#ffc107",
-    inProgress: "#8fc63d",
-    escalated: "#ef6724"
-  };
-
-  const bubbleBaseStyle = {
-    background: "#1e2342",
-    borderRadius: "14px",
-    color: "white",
-    fontWeight: 900,
-    fontSize: 22,
-    padding: "7px 0",
-    minWidth: 40,
-    minHeight: 36,
-    margin: "2px 4px",
-    textAlign: "center",
-    boxShadow: "0 2px 8px #1e448949",
-    display: "inline-block",
-  };
-
-  const bubbleBorderTopColors = {
-    open: "5px solid #bd2331",
-    hold: "5px solid #ffc107",
-    inProgress: "5px solid #8fc63d",
-    escalated: "5px solid #ef6724",
-  };
-
   const statusOrder = ['open', 'hold', 'inProgress', 'escalated'];
+  const statusMapSort = {
+    open: 0,
+    hold: 1,
+    inprogress: 2,
+    inProgress: 2,
+    escalated: 3
+  };
 
-  const statusKeys = selectedStatuses && selectedStatuses.length > 0
-    ? selectedStatuses.map(st => st.value)
+  const normalizedStatusKeys = (selectedStatuses && selectedStatuses.length > 0)
+    ? selectedStatuses.map(st =>
+      normalizeStatus(st.value || st)
+    )
     : [];
+
+  // CHANGE: Add 'totalTickets' after department in pendingTableColumns
+  const pendingTableColumns = [
+    { key: "name", label: "Agent Name" },
+    { key: "department", label: "Department" },
+    { key: "totalTickets", label: "Total Tickets" },
+    { key: "status", label: "Ticket Status" },
+    { key: "ticketNumber", label: "Ticket Number" },
+    { key: "ticketCreated", label: "Ticket Created On" },
+    { key: "daysNotResponded", label: "Since Not Closed " }
+  ];
+
+  const normalizedStatusKeysSet =
+    normalizedStatusKeys.length > 0
+      ? new Set(normalizedStatusKeys)
+      : null;
+
+  const pendingTableRows = useMemo(() => {
+    if (!membersData || !Array.isArray(membersData)) return [];
+    let filteredAgents = membersData;
+    if (selectedDepartmentId) {
+      filteredAgents = filteredAgents.filter(agent =>
+        Array.isArray(agent.departmentIds) && agent.departmentIds.includes(selectedDepartmentId)
+      );
+    }
+    if (selectedAgentNames && selectedAgentNames.length > 0) {
+      filteredAgents = filteredAgents.filter(agent =>
+        selectedAgentNames.includes(agent.name)
+      );
+    }
+    let rows = [];
+    filteredAgents.forEach(agent => {
+      (agent.pendingTickets || [])
+        .filter(tkt =>
+          !selectedDepartmentId ||
+          tkt.departmentId === selectedDepartmentId ||
+          tkt.departmentName === departmentsMap[selectedDepartmentId]?.name
+        )
+        .forEach(tkt => {
+          const tktNorm = normalizeStatus(tkt.status);
+          if (normalizedStatusKeysSet && !normalizedStatusKeysSet.has(tktNorm)) return;
+          let sortKey = (tktNorm === 'inprogress' ? 'inProgress' : tktNorm);
+          let dr = (tkt.daysNotResponded !== undefined && tkt.daysNotResponded !== "" && !isNaN(Number(tkt.daysNotResponded)))
+            ? (Number(tkt.daysNotResponded) < 1 ? 0 : Number(tkt.daysNotResponded))
+            : "";
+          rows.push({
+            name: agent.name || "",
+            department: tkt.departmentName || "",
+            status: tkt.status || "",
+            statusSort: statusMapSort[sortKey] ?? 99,
+            ticketNumber: tkt.ticketNumber || "",
+            ticketCreated: tkt.ticketCreated || "",
+            daysNotResponded: dr
+          });
+        });
+    });
+    return rows.sort((a, b) => {
+      const nameCmp = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      if (nameCmp !== 0) return nameCmp;
+      return (a.statusSort ?? 99) - (b.statusSort ?? 99);
+    });
+  }, [membersData, selectedDepartmentId, selectedAgentNames, normalizedStatusKeysSet, departmentsMap]);
+
+  // CHANGE: Add totalTickets field per agent group and render
+  const groupedPendingRows = useMemo(() => {
+    const grouped = {};
+    pendingTableRows.forEach(row => {
+      if (!grouped[row.name]) grouped[row.name] = [];
+      grouped[row.name].push(row);
+    });
+    const finalRows = [];
+    Object.keys(grouped).forEach(agent => {
+      const totalTickets = grouped[agent].length;
+      grouped[agent].forEach((row, i) => {
+        finalRows.push({
+          ...row,
+          totalTickets,
+          _isFirst: i === 0,
+          _rowSpan: grouped[agent].length
+        });
+      });
+    });
+    return finalRows;
+  }, [pendingTableRows]);
 
   const departmentRows = useMemo(() => {
     if (!departmentViewEnabled) return null;
@@ -86,20 +204,35 @@ export default function AgentTicketAgeTable({
         tickets_15plus_hold: 0,
         tickets_15plus_inProgress: 0,
         tickets_15plus_escalated: 0,
+        tickets_1_7_open_numbers: [],
+        tickets_1_7_hold_numbers: [],
+        tickets_1_7_inProgress_numbers: [],
+        tickets_1_7_escalated_numbers: [],
+        tickets_8_15_open_numbers: [],
+        tickets_8_15_hold_numbers: [],
+        tickets_8_15_inProgress_numbers: [],
+        tickets_8_15_escalated_numbers: [],
+        tickets_15plus_open_numbers: [],
+        tickets_15plus_hold_numbers: [],
+        tickets_15plus_inProgress_numbers: [],
+        tickets_15plus_escalated_numbers: [],
       };
     });
     (membersData || []).forEach(agent => {
       Object.entries(agent.departmentAgingCounts || {}).forEach(([deptId, agingCounts]) => {
         if (!byDept[deptId]) return;
-        statusOrder.forEach(status => {
-          (agingCounts[`${status}BetweenOneAndSevenDaysTickets`] || []).forEach(() => {
-            byDept[deptId][`tickets_1_7_${status}`] += 1;
+        statusOrder.forEach(key => {
+          (agingCounts[`${key}BetweenOneAndSevenDaysTickets`] || []).forEach(ticketNum => {
+            byDept[deptId][`tickets_1_7_${key}`] += 1;
+            byDept[deptId][`tickets_1_7_${key}_numbers`].push(ticketNum);
           });
-          (agingCounts[`${status}BetweenEightAndFifteenDaysTickets`] || []).forEach(() => {
-            byDept[deptId][`tickets_8_15_${status}`] += 1;
+          (agingCounts[`${key}BetweenEightAndFifteenDaysTickets`] || []).forEach(ticketNum => {
+            byDept[deptId][`tickets_8_15_${key}`] += 1;
+            byDept[deptId][`tickets_8_15_${key}_numbers`].push(ticketNum);
           });
-          (agingCounts[`${status}OlderThanFifteenDaysTickets`] || []).forEach(() => {
-            byDept[deptId][`tickets_15plus_${status}`] += 1;
+          (agingCounts[`${key}OlderThanFifteenDaysTickets`] || []).forEach(ticketNum => {
+            byDept[deptId][`tickets_15plus_${key}`] += 1;
+            byDept[deptId][`tickets_15plus_${key}_numbers`].push(ticketNum);
           });
         });
       });
@@ -119,6 +252,91 @@ export default function AgentTicketAgeTable({
       }));
     return sortedRows;
   }, [membersData, departmentsMap, departmentViewEnabled]);
+
+  const baseFont = `'Montserrat', 'Poppins', sans-serif`;
+  const centerCellStyle = {
+    padding: 14,
+    fontWeight: 700,
+    fontFamily: baseFont,
+    borderRadius: 12,
+    background: 'linear-gradient(135deg, #23272f 60%, #15171a 100%)',
+    color: 'white',
+    borderTop: '2px solid #1E4489',
+    borderLeft: '2px solid #1E4489',
+    borderBottom: '2.5px solid #1E4489',
+    borderRight: '2.5px solid #1E4489',
+    transition: 'background 0.18s',
+    cursor: 'pointer',
+    textAlign: 'center',
+    verticalAlign: 'middle'
+  };
+
+  const leftCellStyle = {
+    ...centerCellStyle,
+    textAlign: 'left'
+  };
+  const serialHeaderStyle = {
+    ...centerCellStyle,
+    width: 30,
+    minWidth: 30,
+    maxWidth: 40,
+    textAlign: 'center',
+    position: 'sticky',
+    top: 0,
+    zIndex: 2,
+    fontWeight: 900,
+    background: 'linear-gradient(135deg, #1E4489 70%, #1E4489 100%)'
+  };
+
+  const centerCellStyleHovered = {
+    ...centerCellStyle,
+    background: 'linear-gradient(135deg, #1E4489 60%, #1E4489 100%)',
+    color: 'white'
+  };
+
+  const headerStyle3D = {
+    padding: 14,
+    textAlign: 'center',
+    fontWeight: 900,
+    fontFamily: baseFont,
+    background: 'linear-gradient(135deg, #1E4489 70%, #1E4489 100%)',
+    color: 'white',
+    borderTop: '2px solid #5375ce',
+    borderLeft: '2px solid #6d90e5',
+    borderBottom: '2px solid #1e2950',
+    borderRight: '2px solid #182345',
+    borderRadius: '12px 12px 0 0',
+    position: 'sticky',
+    top: 0,
+    zIndex: 2
+  };
+
+  useEffect(() => {
+    const handleDoubleClick = () => {
+      if (onClose) onClose();
+    };
+    window.addEventListener('dblclick', handleDoubleClick);
+    return () => window.removeEventListener('dblclick', handleDoubleClick);
+  }, [onClose]);
+
+  function aggregateTickets(agent, ageProp, status) {
+    if (!selectedDepartmentId && agent.departmentAgingCounts) {
+      return Object.values(agent.departmentAgingCounts).flatMap(age =>
+        age?.[status + ageProp + 'Tickets'] || []
+      );
+    }
+    return selectedDepartmentId && agent.departmentAgingCounts?.[selectedDepartmentId]
+      ? agent.departmentAgingCounts[selectedDepartmentId][status + ageProp + 'Tickets'] || []
+      : [];
+  }
+
+  function countFromArray(agent, ageProp, status) {
+    return aggregateTickets(agent, ageProp, status).length;
+  }
+
+  function ticketNumbersForDeptRow(row, bucket, statusKey) {
+    return row[`tickets_${bucket}_${statusKey}_numbers`] || [];
+  }
 
   const tableRows = (membersData || [])
     .filter(agent => {
@@ -149,99 +367,110 @@ export default function AgentTicketAgeTable({
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const cellStyle3D = {
-    padding: 14,
-    fontWeight: 700,
-    borderRadius: 12,
-    background: 'linear-gradient(135deg, #23272f 60%, #15171a 100%)',
-    color: 'white',
-    borderTop: '2px solid #1E4489',
-    borderLeft: '2px solid #1E4489',
-    borderBottom: '2.5px solid #1E4489',
-    borderRight: '2.5px solid #1E4489',
-    transition: 'background 0.18s',
-    cursor: 'pointer'
-  };
-
-  const serialHeaderStyle = {
-    ...cellStyle3D,
-    width: 30,
-    minWidth: 30,
-    maxWidth: 40,
-    textAlign: 'center',
-    position: 'sticky',
-    top: 0,
-    zIndex: 2,
-    fontWeight: 900,
-    background: 'linear-gradient(135deg, #1E4489 70%, #1E4489 100%)'
-  };
-
-  const cellStyle3DHovered = {
-    ...cellStyle3D,
-    background: 'linear-gradient(135deg, #1E4489 60%, #1E4489 100%)',
-    color: 'white'
-  };
-
-  const headerStyle3D = {
-    padding: 14,
-    textAlign: 'center',
-    fontWeight: 900,
-    background: 'linear-gradient(135deg, #1E4489 70%, #1E4489 100%)',
-    color: 'white',
-    borderTop: '2px solid #5375ce',
-    borderLeft: '2px solid #6d90e5',
-    borderBottom: '2px solid #1e2950',
-    borderRight: '2px solid #182345',
-    borderRadius: '12px 12px 0 0',
-    position: 'sticky',
-    top: 0,
-    zIndex: 2,
-  };
-
-  useEffect(() => {
-    const handleDoubleClick = () => {
-      if (onClose) onClose();
-    };
-    window.addEventListener('dblclick', handleDoubleClick);
-    return () => window.removeEventListener('dblclick', handleDoubleClick);
-  }, [onClose]);
-
-  function aggregateTickets(agent, ageProp, status) {
-    if (!selectedDepartmentId && agent.departmentAgingCounts) {
-      return Object.values(agent.departmentAgingCounts).flatMap(age =>
-        age?.[status + ageProp + 'Tickets'] || []
-      );
-    }
-    return selectedDepartmentId && agent.departmentAgingCounts?.[selectedDepartmentId]
-      ? agent.departmentAgingCounts[selectedDepartmentId][status + ageProp + 'Tickets'] || []
-      : [];
-  }
-
-  function countFromArray(agent, ageProp, status) {
-    return aggregateTickets(agent, ageProp, status).length;
-  }
-
   return (
-    <div>
+    <div style={{ fontFamily: baseFont }}>
       <div
-        className="no-scrollbar"
         style={{
           margin: '24px auto',
-          maxWidth: 1400,
-          position: 'relative',
-          maxHeight: 549,
-          overflowY: 'auto',
           borderRadius: 16,
           border: '2px solid #32406b',
-          background: '#16171a'
+          background: '#16171a',
+          width: "100%",
+          overflowX: "auto",
+          overflowY: "auto",
+          maxHeight: "100vh"
         }}
       >
-        {departmentViewEnabled ? (
-          <table style={{ width: '100%', borderCollapse: 'separate', borderRadius: 16, fontSize: 18 }}>
+        {showPendingTable ? (
+          <table style={{
+            width: '100%',
+            borderCollapse: 'separate',
+            borderRadius: 16,
+            fontSize: 16,
+            fontFamily: baseFont,
+            tableLayout: 'auto'
+          }}>
+            <thead>
+              <tr>
+                {pendingTableColumns.map(col => (
+                  <th key={col.key}
+                    style={{
+                      padding: 14,
+                      textAlign: col.key === "name" || col.key === "department" ? "left" : "center",
+                      fontWeight: 900,
+                      background: 'linear-gradient(135deg, #1E4489 70%, #1E4489 100%)',
+                      color: 'white',
+                      borderRadius: '12px 12px 0 0',
+                      borderTop: '2px solid #5375ce',
+                      borderLeft: '2px solid #6d90e5',
+                      borderBottom: '2px solid #1e2950',
+                      borderRight: '2px solid #182345',
+                      fontFamily: baseFont,
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 2,
+                    }}>
+                    {col.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {groupedPendingRows.length === 0 ? (
+                <tr>
+                  <td colSpan={pendingTableColumns.length}
+                    style={{
+                      textAlign: 'center', padding: 28,
+                      color: 'WHITE', fontSize: 19,
+                      background: 'linear-gradient(110deg, #181b26 80%, #16171a 100%)',
+                      borderRadius: 14
+                    }}>
+                    No pending status tickets found.
+                  </td>
+                </tr>
+              ) : (
+                groupedPendingRows.map((row, idx) => (
+                  <tr key={`${row.name}_${row.ticketNumber}_${idx}`}>
+                    {row._isFirst ? (
+                      <td style={leftCellStyle} rowSpan={row._rowSpan}>{row.name}</td>
+                    ) : null}
+                    <td style={leftCellStyle}>{row.department}</td>
+                    {row._isFirst ? (
+                      <td style={centerCellStyle} rowSpan={row._rowSpan}>{row.totalTickets}</td>
+                    ) : null}
+                    <td style={centerCellStyle}>{row.status}</td>
+                    <td style={centerCellStyle}>{row.ticketNumber}</td>
+                    <td style={centerCellStyle}>
+                      <div style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        width: "100%"
+                      }}>
+                        <span>{formatDateWithMonthName(row.ticketCreated).split(',')[0]}</span>
+                        <span>{formatDateWithMonthName(row.ticketCreated).split(',')[1]}</span>
+                      </div>
+                    </td>
+                    <td style={centerCellStyle}>
+                      {row.daysNotResponded !== "" && Number(row.daysNotResponded) < 1 ? 0 : row.daysNotResponded}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        ) : departmentViewEnabled ? (
+          <table style={{
+            width: '100%',
+            borderCollapse: 'separate',
+            borderRadius: 16,
+            fontSize: 18,
+            tableLayout: 'auto'
+          }}>
             <thead>
               <tr>
                 <th style={serialHeaderStyle}>SI. NO.</th>
-                <th style={headerStyle3D}>Department Name</th>
+                <th style={{ ...headerStyle3D, textAlign: 'left' }}>Department Name</th>
                 <th style={headerStyle3D}>Total Ticket Count</th>
                 <th style={headerStyle3D}>1 - 7 Tickets</th>
                 <th style={headerStyle3D}>8 - 15 Tickets</th>
@@ -264,131 +493,111 @@ export default function AgentTicketAgeTable({
                 </tr>
               ) : (
                 departmentRows.map(row => (
-                  <tr
-                    key={row.departmentName}
-                    style={{
-                      background: 'linear-gradient(120deg, #16171a 82%, #232d3d 100%)',
-                      color: 'white',
-                      fontSize: 17,
-                      fontWeight: 700,
-                      borderBottom: '2px solid #2b3243'
-                    }}
-                  >
-                    <td style={{ ...cellStyle3D, textAlign: 'center' }}>{row.si}</td>
-                    <td style={{ ...cellStyle3D, textAlign: 'left' }}>{row.departmentName}</td>
-                    <td style={{ ...cellStyle3D, textAlign: 'center' }}>{row.total}</td>
-                    <td style={{ ...cellStyle3D, textAlign: 'center' }}>
-                      {statusKeys.length === 0 ? (
-                        (row[`tickets_1_7_open`] || 0)
-                          + (row[`tickets_1_7_hold`] || 0)
-                          + (row[`tickets_1_7_inProgress`] || 0)
-                          + (row[`tickets_1_7_escalated`] || 0)
-                      ) : (
-                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: "4px" }}>
-                          {statusOrder
-                            .filter(status => statusKeys.includes(status))
-                            .map(status => (
+                  <tr key={row.departmentName} style={{
+                    background: 'linear-gradient(120deg, #16171a 82%, #232d3d 100%)',
+                    color: 'white',
+                    fontSize: 17,
+                    fontWeight: 700,
+                    borderBottom: '2px solid #2b3243'
+                  }}>
+                    <td style={centerCellStyle}>{row.si}</td>
+                    <td style={leftCellStyle}>{row.departmentName}</td>
+                    <td style={centerCellStyle}>{row.total}</td>
+                    {["1_7", "8_15", "15plus"].map((bucket) => (
+                      <td key={bucket} style={centerCellStyle}>
+                        {normalizedStatusKeys.length === 0 ? (
+                          <Tippy content={
+                            statusOrder
+                              .map(statusKey => (row[`tickets_${bucket}_${statusKey}_numbers`] || []))
+                              .reduce((a, b) => a.concat(b), []).join(', ') || "No tickets"
+                          }>
+                            <span
+                              style={{
+                                fontWeight: 900,
+                                fontSize: "18px",
+                                color: "white",
+                                background: "none",
+                                borderRadius: "8px",
+                                padding: "2px 0",
+                                minWidth: "40px",
+                                minHeight: "10px",
+                                textAlign: "center",
+                                display: "inline-block"
+                              }}
+                              title="Total tickets in this age range"
+                            >
+                              {
+                                statusOrder.reduce(
+                                  (sum, key) => sum + (row[`tickets_${bucket}_${key}`] ?? 0),
+                                  0
+                                )
+                              }
+                            </span>
+                          </Tippy>
+                        ) : (
+                          <div style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
+                            {normalizedStatusKeys.map(statusKey => (
                               <Tippy
-                                key={status}
+                                key={statusKey}
                                 content={
-                                  row[`tickets_1_7_${status}`] > 0
-                                    ? (aggregateTickets(row, "BetweenOneAndSevenDays", status).join(', '))
+                                  ticketNumbersForDeptRow(row, bucket, statusKey).length > 0
+                                    ? ticketNumbersForDeptRow(row, bucket, statusKey).join(', ')
                                     : "No tickets"
                                 }
                               >
                                 <span
+                                  className={`agent-status-box ${statusKey}`}
                                   style={{
-                                    ...bubbleBaseStyle,
-                                    borderTop: bubbleBorderTopColors[status]
+                                    background: "#15171a",
+                                    color: "white",
+                                    borderRadius: "12px",
+                                    fontWeight: 900,
+                                    fontSize: "18px",
+                                    minWidth: "40px",
+                                    minHeight: "36px",
+                                    margin: "2px 6px",
+                                    textAlign: "center",
+                                    boxShadow: "0 2px 8px #0a0a0a",
+                                    border: "none",
+                                    borderTop: `6px solid ${statusColors[statusKey] || "#fff"}`,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontFamily: baseFont
                                   }}
+                                  title={statusKey.charAt(0).toUpperCase() + statusKey.slice(1) + ' tickets'}
                                 >
-                                  {row[`tickets_1_7_${status}`]}
+                                  {row[`tickets_${bucket}_${statusKey}`] ?? 0}
                                 </span>
                               </Tippy>
-                            ))
-                          }
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ ...cellStyle3D, textAlign: 'center' }}>
-                      {statusKeys.length === 0 ? (
-                        (row[`tickets_8_15_open`] || 0)
-                          + (row[`tickets_8_15_hold`] || 0)
-                          + (row[`tickets_8_15_inProgress`] || 0)
-                          + (row[`tickets_8_15_escalated`] || 0)
-                      ) : (
-                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: "4px" }}>
-                          {statusOrder
-                            .filter(status => statusKeys.includes(status))
-                            .map(status => (
-                              <Tippy
-                                key={status}
-                                content={
-                                  row[`tickets_8_15_${status}`] > 0
-                                    ? (aggregateTickets(row, "BetweenEightAndFifteenDays", status).join(', '))
-                                    : "No tickets"
-                                }
-                              >
-                                <span
-                                  style={{
-                                    ...bubbleBaseStyle,
-                                    borderTop: bubbleBorderTopColors[status]
-                                  }}
-                                >
-                                  {row[`tickets_8_15_${status}`]}
-                                </span>
-                              </Tippy>
-                            ))
-                          }
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ ...cellStyle3D, textAlign: 'center' }}>
-                      {statusKeys.length === 0 ? (
-                        (row[`tickets_15plus_open`] || 0)
-                          + (row[`tickets_15plus_hold`] || 0)
-                          + (row[`tickets_15plus_inProgress`] || 0)
-                          + (row[`tickets_15plus_escalated`] || 0)
-                      ) : (
-                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: "4px" }}>
-                          {statusOrder
-                            .filter(status => statusKeys.includes(status))
-                            .map(status => (
-                              <Tippy
-                                key={status}
-                                content={
-                                  row[`tickets_15plus_${status}`] > 0
-                                    ? (aggregateTickets(row, "OlderThanFifteenDays", status).join(', '))
-                                    : "No tickets"
-                                }
-                              >
-                                <span
-                                  style={{
-                                    ...bubbleBaseStyle,
-                                    borderTop: bubbleBorderTopColors[status]
-                                  }}
-                                >
-                                  {row[`tickets_15plus_${status}`]}
-                                </span>
-                              </Tippy>
-                            ))
-                          }
-                        </div>
-                      )}
-                    </td>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    ))}
                   </tr>
                 ))
               )}
             </tbody>
           </table>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'separate', borderRadius: 16, fontSize: 18 }}>
+          <table style={{
+            width: '100%',
+            borderCollapse: 'separate',
+            borderRadius: 16,
+            fontSize: 18,
+            tableLayout: 'auto'
+          }}>
             <thead>
               <tr>
                 {columnsToShow.map(col => (
                   <th
                     key={col.key}
-                    style={col.key === "serial" ? serialHeaderStyle : headerStyle3D}
+                    style={col.key === "serial"
+                      ? serialHeaderStyle
+                      : col.key === "name" || col.key === "department"
+                        ? { ...headerStyle3D, textAlign: 'left' }
+                        : headerStyle3D}
                   >
                     {col.label}
                   </th>
@@ -425,32 +634,20 @@ export default function AgentTicketAgeTable({
                       borderBottom: '2px solid #2b3243'
                     }}
                   >
+                    <td style={hoveredRowIndex === rowIndex ? centerCellStyleHovered : centerCellStyle}>{rowIndex + 1}</td>
                     <td
-                      style={{
-                        ...(hoveredRowIndex === rowIndex ? cellStyle3DHovered : cellStyle3D),
-                        width: 30,
-                        minWidth: 30,
-                        maxWidth: 40,
-                        textAlign: 'center'
-                      }}
-                    >
-                      {rowIndex + 1}
-                    </td>
-                    <td
-                      style={hoveredRowIndex === rowIndex ? { ...cellStyle3DHovered, textAlign: 'left' } : { ...cellStyle3D, textAlign: 'left' }}
+                      style={hoveredRowIndex === rowIndex ? { ...leftCellStyle } : { ...leftCellStyle }}
                       onMouseEnter={() => setHoveredRowIndex(rowIndex)}
                       onMouseLeave={() => setHoveredRowIndex(null)}
                     >
                       {row.name}
                     </td>
                     {selectedDepartmentId && (
-                      <td style={hoveredRowIndex === rowIndex ? cellStyle3DHovered : cellStyle3D}>
+                      <td style={hoveredRowIndex === rowIndex ? leftCellStyle : leftCellStyle}>
                         {row.departmentName}
                       </td>
                     )}
-                    <td
-                      style={hoveredRowIndex === rowIndex ? { ...cellStyle3DHovered, textAlign: 'center' } : { ...cellStyle3D, textAlign: 'center' }}
-                    >
+                    <td style={hoveredRowIndex === rowIndex ? centerCellStyleHovered : centerCellStyle}>
                       {visibleAgeColumns.reduce((sum, col) => (
                         sum +
                         countFromArray(row, col.ageProp, 'open') +
@@ -462,55 +659,74 @@ export default function AgentTicketAgeTable({
                     {visibleAgeColumns.map(col => (
                       <td
                         key={col.key}
-                        style={hoveredRowIndex === rowIndex ? { ...cellStyle3DHovered, textAlign: 'center' } : { ...cellStyle3D, textAlign: 'center' }}
+                        style={hoveredRowIndex === rowIndex ? centerCellStyleHovered : centerCellStyle}
                       >
-                        {(statusKeys.length === 0 || (statusKeys.length === 1 && statusKeys[0] === "total")) ? (
+                        {normalizedStatusKeys.length === 0 ? (
                           <Tippy content={
-                            (() => {
-                              const open = aggregateTickets(row, col.ageProp, 'open');
-                              const hold = aggregateTickets(row, col.ageProp, 'hold');
-                              const inProgress = aggregateTickets(row, col.ageProp, 'inProgress');
-                              const escalated = aggregateTickets(row, col.ageProp, 'escalated');
-                              const arr = [...open, ...hold, ...inProgress, ...escalated];
-                              return arr.length ? arr.join(', ') : "No tickets";
-                            })()
+                            statusOrder
+                              .map(key => aggregateTickets(row, col.ageProp, key))
+                              .reduce((a, b) => a.concat(b), []).join(', ') || "No tickets"
                           }>
-                            <span style={{ cursor: 'pointer', display: 'inline-block', padding: '4px' }}>
+                            <span
+                              style={{
+                                fontWeight: 900,
+                                fontSize: "22px",
+                                color: "#fff",
+                                background: "none",
+                                borderRadius: "8px",
+                                padding: "8px 0",
+                                minWidth: "40px",
+                                minHeight: "36px",
+                                textAlign: "center",
+                                display: "inline-block"
+                              }}
+                              title="Total tickets in this age range"
+                            >
                               {
-                                countFromArray(row, col.ageProp, 'open') +
-                                countFromArray(row, col.ageProp, 'hold') +
-                                countFromArray(row, col.ageProp, 'inProgress') +
-                                countFromArray(row, col.ageProp, 'escalated')
+                                statusOrder.reduce(
+                                  (sum, key) => sum + countFromArray(row, col.ageProp, key),
+                                  0
+                                )
                               }
                             </span>
                           </Tippy>
                         ) : (
-                          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                            {statusOrder
-                              .filter(status => statusKeys.includes(status))
-                              .map(status => {
-                                const val = countFromArray(row, col.ageProp, status);
-                                const ticketNumbers = aggregateTickets(row, col.ageProp, status);
-                                return (
-                                  <Tippy
-                                    key={status}
-                                    content={
-                                      ticketNumbers.length
-                                        ? ticketNumbers.join(', ')
-                                        : "No tickets"
-                                    }
-                                  >
-                                    <span
-                                      style={{
-                                        ...bubbleBaseStyle,
-                                        borderTop: bubbleBorderTopColors[status]
-                                      }}
-                                    >
-                                      {val}
-                                    </span>
-                                  </Tippy>
-                                );
-                              })}
+                          <div style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
+                            {normalizedStatusKeys.map(statusKey => (
+                              <Tippy
+                                key={statusKey}
+                                content={
+                                  aggregateTickets(row, col.ageProp, statusKey).length > 0
+                                    ? aggregateTickets(row, col.ageProp, statusKey).join(', ')
+                                    : "No tickets"
+                                }
+                              >
+                                <span
+                                  className={`agent-status-box ${statusKey}`}
+                                  style={{
+                                    background: "#15171a",
+                                    color: "#fff",
+                                    borderRadius: "12px",
+                                    fontWeight: 900,
+                                    fontSize: "18px",
+                                    minWidth: "40px",
+                                    minHeight: "36px",
+                                    margin: "2px 6px",
+                                    textAlign: "center",
+                                    boxShadow: "0 2px 8px #0a0a0a",
+                                    border: "none",
+                                    borderTop: `6px solid ${statusColors[statusKey] || "#fff"}`,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontFamily: baseFont
+                                  }}
+                                  title={statusKey.charAt(0).toUpperCase() + statusKey.slice(1) + ' tickets'}
+                                >
+                                  {countFromArray(row, col.ageProp, statusKey)}
+                                </span>
+                              </Tippy>
+                            ))}
                           </div>
                         )}
                       </td>

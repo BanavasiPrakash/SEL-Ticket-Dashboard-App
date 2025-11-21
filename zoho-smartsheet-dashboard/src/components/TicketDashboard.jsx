@@ -1345,8 +1345,8 @@ const [departmentViewEnabled, setDepartmentViewEnabled] = useState(false)
                     style={{
                       position: "absolute",
                       width: "100%",
-                      height: 150,
-                      fontSize: 12,
+                      height: "auto",
+                      fontSize: 10,
                       top: 50,
                       left: 0,
                       minWidth: 100,
@@ -1418,6 +1418,25 @@ const [departmentViewEnabled, setDepartmentViewEnabled] = useState(false)
   />
   Departments
 </label>
+
+<label style={{ display: "flex", alignItems: "center", padding: "5px 0", cursor: "pointer" }}>
+  <input
+    type="checkbox"
+    checked={selectedAges.includes("pending")}
+    onChange={e => {
+      setSelectedAges(prev =>
+        e.target.checked
+          ? [...prev, "pending"]
+          : prev.filter(v => v !== "pending")
+      );
+    }}
+    style={{ marginRight: 8 }}
+  />
+  Status-Pending
+</label>
+
+
+
 
                   </div>
                 )}
