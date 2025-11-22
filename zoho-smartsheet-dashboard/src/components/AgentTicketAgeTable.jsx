@@ -72,9 +72,9 @@ export default function AgentTicketAgeTable({
   const showPendingTable = selectedAges.includes("pending");
 
   const ageColumns = [
-    { key: "fifteenDays", label: "1-15 Tickets", ageProp: "BetweenOneAndFifteenDays" },
-    { key: "sixteenToThirty", label: "8-15 Tickets", ageProp: "BetweenSixteenAndThirtyDays" },
-    { key: "month", label: "15+ Tickets", ageProp: "OlderThanThirtyDays" }
+    { key: "fifteenDays", label: "1 - 15 Days Tickets", ageProp: "BetweenOneAndFifteenDays" },
+    { key: "sixteenToThirty", label: "16 - 30 Days Tickets", ageProp: "BetweenSixteenAndThirtyDays" },
+    { key: "month", label: "30+ DaysTickets", ageProp: "OlderThanThirtyDays" }
   ];
 
   const visibleAgeColumns = ageColumns.filter(col => selectedAges.includes(col.key));
@@ -104,12 +104,12 @@ export default function AgentTicketAgeTable({
   // CHANGE: Add 'totalTickets' after department in pendingTableColumns
   const pendingTableColumns = [
     { key: "name", label: "Agent Name" },
-    { key: "department", label: "Department" },
-    { key: "totalTickets", label: "Total Tickets" },
+    { key: "department", label: "Department Name" },
+    { key: "totalTickets", label: "Total Pending Tickets" },
     { key: "status", label: "Ticket Status" },
     { key: "ticketNumber", label: "Ticket Number" },
-    { key: "ticketCreated", label: "Ticket Created On" },
-    { key: "daysNotResponded", label: "Since Not Closed " }
+    { key: "ticketCreated", label: "Ticket Created Date & Time" },
+    { key: "daysNotResponded", label: "Ticket Age Days " }
   ];
 
   const normalizedStatusKeysSet =
@@ -386,7 +386,7 @@ export default function AgentTicketAgeTable({
             width: '100%',
             borderCollapse: 'separate',
             borderRadius: 16,
-            fontSize: 16,
+            fontSize: 14,
             fontFamily: baseFont,
             tableLayout: 'auto'
           }}>
@@ -469,12 +469,12 @@ export default function AgentTicketAgeTable({
           }}>
             <thead>
               <tr>
-                <th style={serialHeaderStyle}>SI. NO.</th>
+                <th style={serialHeaderStyle}>SI. No.</th>
                 <th style={{ ...headerStyle3D, textAlign: 'left' }}>Department Name</th>
                 <th style={headerStyle3D}>Total Ticket Count</th>
-                <th style={headerStyle3D}>1 - 7 Tickets</th>
-                <th style={headerStyle3D}>8 - 15 Tickets</th>
-                <th style={headerStyle3D}>15+ Tickets</th>
+                <th style={headerStyle3D}>1 - 7 Days Tickets</th>
+                <th style={headerStyle3D}>8 - 15 Days Tickets</th>
+                <th style={headerStyle3D}>15+ Days Tickets</th>
               </tr>
             </thead>
             <tbody>
@@ -524,7 +524,7 @@ export default function AgentTicketAgeTable({
                                 textAlign: "center",
                                 display: "inline-block"
                               }}
-                              title="Total tickets in this age range"
+                              // title="Total tickets in this age range"
                             >
                               {
                                 statusOrder.reduce(
@@ -670,13 +670,13 @@ export default function AgentTicketAgeTable({
                             <span
                               style={{
                                 fontWeight: 900,
-                                fontSize: "22px",
-                                color: "#fff",
+                                fontSize: "18px",
+                                color: "white",
                                 background: "none",
                                 borderRadius: "8px",
                                 padding: "8px 0",
                                 minWidth: "40px",
-                                minHeight: "36px",
+                                minHeight: "10px",
                                 textAlign: "center",
                                 display: "inline-block"
                               }}
@@ -705,7 +705,7 @@ export default function AgentTicketAgeTable({
                                   className={`agent-status-box ${statusKey}`}
                                   style={{
                                     background: "#15171a",
-                                    color: "#fff",
+                                    color: "white",
                                     borderRadius: "12px",
                                     fontWeight: 900,
                                     fontSize: "18px",
@@ -741,3 +741,5 @@ export default function AgentTicketAgeTable({
     </div>
   );
 }
+
+//Final

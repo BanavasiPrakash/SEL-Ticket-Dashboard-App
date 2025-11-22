@@ -1054,15 +1054,15 @@ const [departmentViewEnabled, setDepartmentViewEnabled] = useState(false)
             alignItems: "center",
             justifyContent: "space-between",
             position: "relative",
-            padding: "0 20px",
+            padding: "12px 20px",
           }}
         >
           {/* Left logo */}
           <img
             className="header-image"
-            src="/suprajit_logo_BG.png"
+            src="/Suprajit_branding-logo.webp"
             alt="Left icon"
-            style={{ height: 80, width: "auto" }}
+            style={{ height: 53, width: "auto" }}
           />
           {/* Center title */}
           <div
@@ -1077,6 +1077,7 @@ const [departmentViewEnabled, setDepartmentViewEnabled] = useState(false)
               textTransform: "uppercase",
               position: "relative",
               zIndex: 2,
+              
             }}
           >
             TICKET DASHBOARD
@@ -1312,7 +1313,7 @@ const [departmentViewEnabled, setDepartmentViewEnabled] = useState(false)
                   options={statusOptions}
                   value={selectedStatuses}
                   onChange={setSelectedStatuses}
-                  placeholder="STATUSES"
+                  placeholder="STATUS"
                   styles={selectStyles}
                   menuPortalTarget={document.body}
                 />
