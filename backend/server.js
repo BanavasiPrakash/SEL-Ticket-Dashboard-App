@@ -18,9 +18,9 @@ app.use((req, res, next) => {
   next();
 });
 
-const clientId = "1000.VEPAX9T8TKDWJZZD95XT6NN52PRPQY";
-const clientSecret = "acca291b89430180ced19660cd28ad8ce1e4bec6e8";
-const refreshToken = "1000.465100d543b8d9471507bdf0b0263414.608f3f3817d11b09f142fd29810cca6f";
+const clientId = process.env.CLIENT_ID;
+const clientSecret = process.env.CLIENT_SECRET;
+const refreshToken = process.env.REFRESH_TOKEN;
 
 let cachedAccessToken = null;
 let accessTokenExpiry = null;
